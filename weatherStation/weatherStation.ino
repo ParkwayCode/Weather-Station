@@ -58,7 +58,7 @@ const char* ntpServer = "pool.ntp.org";                                         
 String serverUrl = "https://api.openweathermap.org/data/2.5/weather?q=" + town + "&appid=" + myAPI + "&units=" + units;                 // Weather API URL
 String forecastUrl = "https://api.openweathermap.org/data/2.5/forecast?q=" + town + "&appid=" + myAPI + "&units=" + units + "&cnt=45";  // Forecast API URL
 unsigned long lastRequestTime = 0;                                                                                                      // Last time data was requested
-const unsigned long requestInterval = 1000;                                                                                             // Minimum interval between requests (1 second)
+const unsigned long requestInterval = 100000;                                                                                             // Minimum interval between requests (1 second)
 
 float globalWindSpeed = 0.0;
 int globalWindDirection = 0;
@@ -270,8 +270,10 @@ String SendHTML() {
   ptr += "}";
   ptr += "* { box-sizing: border-box; }";
   ptr += "</style></head><body>";
-  ptr += "<h1>ESP32 Weather Station</h1>";
-  ptr += "<div class='tabs'><a href='/current'>Current</a><a href='/forecast'>Forecast</a></div>";
+  ptr += "<h1>Wetter Station</h1>";
+  ptr += "<div class='tabs'><a href='/current'>Current</a><a href='/forecast'>Forecast</a><a href='/settings'>Settings</a></div>";
+
+ // ptr += "<div class='tabs'><a href='/current'>Current</a><a href='/forecast'>Forecast</a></div>";
   ptr += "<div class='container'>";
 
   ptr += "<div class='data'><div class='side-by-side' colspan='3'><div class='heading'>BME280 Sensor:</div></div></div>";
@@ -420,7 +422,7 @@ String SendForecastHTML() {
   ptr += "* { box-sizing: border-box; }";
   ptr += "</style></head><body>";
   ptr += "<h1>ESP32 Weather Station - Forecast</h1>";
-  ptr += "<div class='tabs'><a href='/current'>Current</a><a href='/forecast'>Forecast</a></div>";
+  ptr += "<div class='tabs'><a href='/current'>Current</a><a href='/forecast'>Forecast</a><a href='/settings'>Settings</a></div>";
   ptr += "<div class='forecast-container'>";
   for (int i = 0; i < 3; i++) {
     if (forecast[i].date != "N/A" && forecast[i].tempMin != 1000.0 && forecast[i].tempMax != 1000.0) {
@@ -908,6 +910,15 @@ void setup() {
   minT = preferences.getFloat("minT", 85.0);   // Load or set default minimum temperature
   maxT = preferences.getFloat("maxT", -40.0);  // Load or set default maximum temperature
 
+  town = preferences.getString("town", TOWN);
+  zone  = preferences.getInt("timezone", TIMEZONE);
+  
+
+  
+  serverUrl = "https://api.openweathermap.org/data/2.5/weather?q=" + town + "&appid=" + myAPI + "&units=" + units;                 // Weather API URL
+  forecastUrl = "https://api.openweathermap.org/data/2.5/forecast?q=" + town + "&appid=" + myAPI + "&units=" + units + "&cnt=45";  // Forecast API URL
+
+
   setTime();  // Synchronize time with NTP
   if (Wmsg.isEmpty()) {
     Wmsg = "Weather Station Active";          // Set default scrolling message
@@ -925,6 +936,7 @@ void setup() {
     0           // Core to run on
   );
 
+  
   server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
     request->redirect("/current");  // Redirect root to current page
   });
@@ -950,6 +962,55 @@ void setup() {
   server.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest* request) {
     request->send(404);  // Return 404 for favicon request
   });
+
+server.on("/settings", HTTP_GET, [](AsyncWebServerRequest* request) {
+  String html = "<!DOCTYPE html><html><head>";
+  html += "<meta charset='UTF-8'>";
+  html += "<meta name='viewport' content='width=device-width, initial-scale=1.0'>";
+  html += "<style>";
+  html += "body { font-family: 'Open Sans', sans-serif; background-color: #121212; color: #e0e0e0; text-align: center; padding: 20px; }";
+  html += ".tabs a { color: #e0e0e0; margin: 0 10px; text-decoration: none; font-weight: bold; }";
+  html += "form { margin-top: 20px; }";
+  html += "input[type=text], input[type=number] { padding: 8px; width: 200px; margin: 10px; background:#333; color:#fff; border:none; border-radius:4px; }";
+  html += "input[type=submit] { padding: 10px 20px; background-color: #F29C1F; color: #000; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }";
+  html += "</style></head><body>";
+
+  html += "<h1>Settings</h1>";
+  html += "<div class='tabs'><a href='/current'>Current</a><a href='/forecast'>Forecast</a><a href='/settings'>Settings</a></div>";
+
+  html += "<form method='POST' action='/updateConfig'>";
+  html += "<div><label>Town:</label><br><input name='town' type='text' value='" + town + "'></div>";
+  html += "<div><label>Timezone:</label><br><input name='timezone' type='number' value='" + String(TIMEZONE) + "'></div>";
+  html += "<input type='submit' value='Save'>";
+  html += "</form>";
+
+  html += "</body></html>";
+  request->send(200, "text/html", html);
+});
+
+server.on("/updateConfig", HTTP_POST, [](AsyncWebServerRequest *request) {
+  if (request->hasParam("town", true)) {
+    String newTown = request->getParam("town", true)->value();
+    preferences.putString("town", newTown);
+    town = newTown;
+  }
+
+  if (request->hasParam("timezone", true)) {
+    int newZone = request->getParam("timezone", true)->value().toInt();
+    preferences.putInt("timezone", newZone);
+    configTime(newZone * 3600, 0, ntpServer);
+  }
+
+  // Rebuild API URLs with new town
+  serverUrl = "https://api.openweathermap.org/data/2.5/weather?q=" + town + "&appid=" + String(API_KEY) + "&units=" + UNITS;
+  forecastUrl = "https://api.openweathermap.org/data/2.5/forecast?q=" + town + "&appid=" + String(API_KEY) + "&units=" + UNITS + "&cnt=45";
+
+  lastSensorReadTime = 0;
+  getData();  // Reload weather data immediately
+  
+  request->redirect("/current");
+});
+
 
   server.begin();  // Start the web server
 
