@@ -646,7 +646,8 @@ void getData() {
 const uint16_t* getWeatherIconByCode(const String& code) {
   if (code == "01d") return sunny;
   if (code == "01n") return night_clear;
-  if (code == "02d" || code == "02n") return partly_cloudy;
+  if (code == "02d") return partly_cloudy_day;
+  if (code == "02n") return partly_cloudy_night;
   if (code == "03d" || code == "03n") return cloudy;
   if (code == "04d" || code == "04n") return cloudy;
   if (code == "09d" || code == "09n") return rain;
