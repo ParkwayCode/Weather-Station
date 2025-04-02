@@ -46,10 +46,12 @@ Preferences preferences;  // Non-volatile storage for settings
 
 // Time Zone and Location
 int zone = TIMEZONE;
+
 String town = TOWN;
 String myAPI = API_KEY;
+String units = UNITS;
 
-const char* units = UNITS;                   // User: Set your units to "metric" or "imperial" here
+
 const char* wifiSSID = WIFI_SSID;  // User: Set your WiFi SSID here
 const char* wifiPassword = WIFI_PASSWORD;          // User: Set your WiFi password here
 
@@ -913,6 +915,7 @@ void setup() {
 
   town = preferences.getString("town", TOWN);
   zone  = preferences.getInt("timezone", TIMEZONE);
+  myAPI = preferences.getString("myAPI", TOWN);
   
 
   
@@ -964,30 +967,36 @@ void setup() {
     request->send(404);  // Return 404 for favicon request
   });
 
-server.on("/settings", HTTP_GET, [](AsyncWebServerRequest* request) {
-  String html = "<!DOCTYPE html><html><head>";
-  html += "<meta charset='UTF-8'>";
-  html += "<meta name='viewport' content='width=device-width, initial-scale=1.0'>";
-  html += "<style>";
-  html += "body { font-family: 'Open Sans', sans-serif; background-color: #121212; color: #e0e0e0; text-align: center; padding: 20px; }";
-  html += ".tabs a { color: #e0e0e0; margin: 0 10px; text-decoration: none; font-weight: bold; }";
-  html += "form { margin-top: 20px; }";
-  html += "input[type=text], input[type=number] { padding: 8px; width: 200px; margin: 10px; background:#333; color:#fff; border:none; border-radius:4px; }";
-  html += "input[type=submit] { padding: 10px 20px; background-color: #F29C1F; color: #000; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }";
-  html += "</style></head><body>";
-
-  html += "<h1>Settings</h1>";
-  html += "<div class='tabs'><a href='/current'>Current</a><a href='/forecast'>Forecast</a><a href='/settings'>Settings</a></div>";
-
-  html += "<form method='POST' action='/updateConfig'>";
-  html += "<div><label>Town:</label><br><input name='town' type='text' value='" + town + "'></div>";
-  html += "<div><label>Timezone:</label><br><input name='timezone' type='number' value='" + String(TIMEZONE) + "'></div>";
-  html += "<input type='submit' value='Save'>";
-  html += "</form>";
-
-  html += "</body></html>";
-  request->send(200, "text/html", html);
-});
+  server.on("/settings", HTTP_GET, [](AsyncWebServerRequest* request) {
+    String html = "<!DOCTYPE html><html><head>";
+    html += "<meta charset='UTF-8'>";
+    html += "<meta name='viewport' content='width=device-width, initial-scale=1.0'>";
+    html += "<style>";
+    html += "body { font-family: 'Open Sans', sans-serif; background-color: #121212; color: #e0e0e0; text-align: center; padding: 20px; }";
+    html += ".tabs a { color: #e0e0e0; margin: 0 10px; text-decoration: none; font-weight: bold; }";
+    html += "form { margin-top: 20px; }";
+    html += "input[type=text], input[type=number], select { padding: 8px; width: 200px; margin: 10px; background:#333; color:#fff; border:none; border-radius:4px; }";
+    html += "input[type=submit] { padding: 10px 20px; background-color: #F29C1F; color: #000; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }";
+    html += "</style></head><body>";
+  
+    html += "<h1>Settings</h1>";
+    html += "<div class='tabs'><a href='/current'>Current</a><a href='/forecast'>Forecast</a><a href='/settings'>Settings</a></div>";
+  
+    html += "<form method='POST' action='/updateConfig'>";
+    html += "<div><label>Town:</label><br><input name='town' type='text' value='" + town + "'></div>";
+    html += "<div><label>Timezone:</label><br><input name='timezone' type='number' value='" + String(zone) + "'></div>";
+    html += "<div><label>API Key:</label><br><input name='apiKey' type='text' value='" + myAPI + "'></div>";
+    html += "<div><label>Units:</label><br><select name='units'>";
+    html += "<option value='metric'" + String(units == "metric" ? " selected" : "") + ">Metric (°C, m/s)</option>";
+    html += "<option value='imperial'" + String(units == "imperial" ? " selected" : "") + ">Imperial (°F, mph)</option>";
+    html += "</select></div>";
+    html += "<input type='submit' value='Save'>";
+    html += "</form>";
+  
+    html += "</body></html>";
+    request->send(200, "text/html", html);
+  });
+  
 
 server.on("/updateConfig", HTTP_POST, [](AsyncWebServerRequest *request) {
   if (request->hasParam("town", true)) {
@@ -1002,6 +1011,21 @@ server.on("/updateConfig", HTTP_POST, [](AsyncWebServerRequest *request) {
     configTime(newZone * 3600, 0, ntpServer);
   }
 
+  if (request->hasParam("apiKey", true)) {
+    String newKey = request->getParam("apiKey", true)->value();
+    if (newKey.length() > 0) {
+      myAPI = newKey;
+      preferences.putString("apiKey", myAPI);
+    }
+  }
+
+  if (request->hasParam("units", true)) {
+    String newUnits = request->getParam("units", true)->value();
+    if (newUnits == "metric" || newUnits == "imperial") {
+      units = newUnits;
+      preferences.putString("units", units);
+    }
+  }
   // Rebuild API URLs with new town
   serverUrl = "https://api.openweathermap.org/data/2.5/weather?q=" + town + "&appid=" + String(API_KEY) + "&units=" + UNITS;
   forecastUrl = "https://api.openweathermap.org/data/2.5/forecast?q=" + town + "&appid=" + String(API_KEY) + "&units=" + UNITS + "&cnt=45";
