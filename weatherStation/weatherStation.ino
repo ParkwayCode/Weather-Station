@@ -1,6 +1,7 @@
 #define BUTTON_1 0
 #define BUTTON_2 14
 #define VERSION "1.0.0 Stable"
+//Test
 
 #include "config.h"
 #include <ArduinoJson.h>
@@ -47,7 +48,7 @@ Preferences preferences;  // Non-volatile storage for settings
 // Time Zone and Location
 int zone = TIMEZONE;
 
-String town = TOWN;
+String town = "Ingolstadt";
 String myAPI = API_KEY;
 String units = UNITS;
 
@@ -60,15 +61,26 @@ const char* ntpServer = "pool.ntp.org";                                         
 String serverUrl = "https://api.openweathermap.org/data/2.5/weather?q=" + town + "&appid=" + myAPI + "&units=" + units;                 // Weather API URL
 String forecastUrl = "https://api.openweathermap.org/data/2.5/forecast?q=" + town + "&appid=" + myAPI + "&units=" + units + "&cnt=45";  // Forecast API URL
 unsigned long lastRequestTime = 0;                                                                                                      // Last time data was requested
-const unsigned long requestInterval = 100000;                                                                                             // Minimum interval between requests (1 second)
+const unsigned long requestInterval = 1000;      // Minimum interval between requests (1 second)
+
+
+#define TEMP_HISTORY_SIZE 288  // 24h * 12 Messungen
+float tempHistory[TEMP_HISTORY_SIZE];
+int tempHistoryIndex = 0;
+unsigned long lastHistorySave = 0;
+const unsigned long historySaveInterval = 5 * 60 * 1000; // 5 Minuten
+
 
 float globalWindSpeed = 0.0;
 int globalWindDirection = 0;
 int ani = 100;  // Reverted to original value
 float maxT = -40.0, minT = 85.0;
+unsigned long minT_timestamp = 0, maxT_timestamp = 0;
 unsigned long timePased = 0;
-unsigned long lastSensorReadTime = 0;
-const unsigned long sensorReadInterval = 300000;
+unsigned long lastSensorReadTimeBME = 0;
+const unsigned long sensorReadIntervalBME = 60000;
+unsigned long lastSensorReadTimeAPI = 0;
+const unsigned long sensorReadIntervalAPI = 300000;
 const unsigned long twentyFourHours = 86400000;
 #define TFT_BLACK 0x0000
 #define TFT_WHITE tft.color565(255, 255, 255)
@@ -291,6 +303,21 @@ String SendHTML() {
   ptr += "<svg viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'><path d='M20.6933 17.3294C21.0506 15.9959 21.0964 14.5982 20.8271 13.2442C20.5577 11.8902 19.9806 10.6164 19.1402 9.52115C18.2998 8.42593 17.2187 7.53872 15.9806 6.92815C14.7425 6.31757 13.3805 6 12 6C10.6195 6 9.25752 6.31757 8.0194 6.92815C6.78128 7.53872 5.70021 8.42593 4.85982 9.52115C4.01943 10.6164 3.44225 11.8902 3.17293 13.2442C2.90361 14.5982 2.94937 15.9959 3.30667 17.3294' stroke='var(--press-color)' stroke-width='2' stroke-linecap='round'></path><path d='M12.7657 15.5823C13.2532 16.2916 12.9104 17.3738 12 17.9994C11.0897 18.625 9.95652 18.5571 9.46906 17.8477C8.94955 17.0917 7.15616 12.8409 6.06713 10.2114C5.86203 9.71621 6.4677 9.3 6.85648 9.669C8.92077 11.6283 12.2462 14.8263 12.7657 15.5823Z' stroke='var(--press-color)' stroke-width='2'></path><path d='M12 6V8' stroke='var(--press-color)' stroke-width='2' stroke-linecap='round'></path><path d='M5.63599 8.63574L7.0502 10.05' stroke='var(--press-color)' stroke-width='2' stroke-linecap='round'></path><path d='M18.364 8.63574L16.9498 10.05' stroke='var(--press-color)' stroke-width='2' stroke-linecap='round'></path><path d='M20.6934 17.3291L18.7615 16.8115' stroke='var(--press-color)' stroke-width='2' stroke-linecap='round'></path><path d='M3.30664 17.3291L5.23849 16.8115' stroke='var(--press-color)' stroke-width='2' stroke-linecap='round'></path></svg>";
   ptr += "</div><div class='side-by-side text'>Pressure</div><div class='side-by-side reading' id='pressureBME280Sensor'>" + String(wData[5], 2) + "<span class='superscript'>" + (units == "metric" ? "hPa" : "inHg") + "</span></div></div>";
 
+  //   ptr += "<canvas id='tempChart' width='320' height='200'></canvas>";
+  // ptr += "<script src='https://cdn.jsdelivr.net/npm/chart.js'></script>";
+  // ptr += "<script>\n";
+  // ptr += "fetch('/tempHistory').then(response => response.json()).then(data => {\n";
+  // ptr += "const ctx = document.getElementById('tempChart').getContext('2d');\n";
+  // ptr += "const labels = Array.from({length: data.length}, (_, i) => i);\n";
+  // ptr += "const tempChart = new Chart(ctx, {\n";
+  // ptr += "type: 'line',\n";
+  // ptr += "data: { labels: labels, datasets: [{ label: 'Temp 24h', data: data, borderColor: '#F29C1F', fill: false }] },\n";
+  // ptr += "options: { scales: { x: { ticks: { display: false } }, y: { beginAtZero: false } } }\n";
+  // ptr += "});\n";
+  // ptr += "});\n";
+  // ptr += "</script>\n";
+
+
   ptr += "<details><summary class='heading'>OpenWeather:</summary>";
   ptr += "<div class='data temperature'><div class='side-by-side icon'>";
   ptr += "<svg viewBox='0 0 48 48' xmlns='http://www.w3.org/2000/svg' fill='var(--temp-color)'><g><path d='M29,10a8,8,0,0,0-16,0V27.5A10.5,10.5,0,0,0,10,35a11,11,0,0,0,22,0,10.5,10.5,0,0,0-3-7.5ZM21,42a7,7,0,0,1-7-7,6.8,6.8,0,0,1,3-5.7V10a4,4,0,0,1,8,0V29.3A6.8,6.8,0,0,1,28,35,7,7,0,0,1,21,42Z'></path><path d='M23,30.4V17H19V30.4A5.1,5.1,0,0,0,16,35a5,5,0,0,0,10,0A5.1,5.1,0,0,0,23,30.4Z'></path><path d='M40,23H34a2,2,0,0,0,0,4h6a2,2,0,0,0,0-4Z'></path><path d='M40,17H34a2,2,0,0,0,0,4h6a2,2,0,0,0,0-4Z'></path><path d='M40,11H34a2,2,0,0,0,0,4h6a2,2,0,0,0,0-4Z'></path><path d='M34,9h6a2,2,0,0,0,0-4H34a2,2,0,0,0,0,4Z'></path></g></svg>";
@@ -472,8 +499,9 @@ String getSensorDataJSON() {
   yield();
 
   float currentTemp = wData[3];
-  if (currentTemp < minT) minT = currentTemp;  // Update minimum temperature
-  if (currentTemp > maxT) maxT = currentTemp;  // Update maximum temperature
+
+  //if (currentTemp < minT) minT = currentTemp;  // Update minimum temperature
+  //if (currentTemp > maxT) maxT = currentTemp;  // Update maximum temperature
 
   String json = "{\"tempOpenWeather\":\"" + String(temperature, 2) + "\",";
   json += "\"humOpenWeather\":\"" + String(wData[0], 2) + "\",";
@@ -526,8 +554,15 @@ void setTime() {
   }
 }
 
+void saveTempHistory() {
+  preferences.putBytes("tempHistory", tempHistory, sizeof(tempHistory));
+  preferences.putInt("tempHistoryIndex", tempHistoryIndex);
+  Serial.println("TempHistory saved to Flash.");
+}
+
 void getData() {
-  if (millis() - lastSensorReadTime >= sensorReadInterval || lastSensorReadTime == 0) {
+  unsigned long currentMillis = millis();
+  if (currentMillis - lastSensorReadTimeAPI >= sensorReadIntervalAPI || lastSensorReadTimeAPI == 0) {
     HTTPClient http;
     http.begin(serverUrl);  // Start HTTP request for current weather
     int httpResponseCode = http.GET();
@@ -622,14 +657,44 @@ void getData() {
       Serial.println("Failed to get forecast data");
     }
     http.end();
+    lastSensorReadTimeAPI = millis();
+  }
+  // ---- BME280 Sensor Update jede 1 Minute ----
+  if (currentMillis - lastSensorReadTimeBME >= sensorReadIntervalBME || lastSensorReadTimeBME == 0) {
+   
 
     wData[3] = bme.readTemperature();        // Read temperature from BME280
     wData[4] = bme.readHumidity();           // Read humidity from BME280
     wData[5] = bme.readPressure() / 100.0F;  // Read pressure from BME280 and convert to hPa
     Serial.println("Updating data: temp=" + String(wData[3]) + ", hum=" + String(wData[4]) + ", press=" + String(wData[5]));
     float currentTemp = wData[3];                // Current temperature for min/max comparison
-    if (currentTemp < minT) minT = currentTemp;  // Update minimum temperature
-    if (currentTemp > maxT) maxT = currentTemp;  // Update maximum temperature
+    // Wenn 24h seit minT gespeichert sind: Reset
+    if (millis() - minT_timestamp > twentyFourHours || minT_timestamp == 0) {
+      minT = currentTemp;
+      minT_timestamp = millis();
+      preferences.putULong("minT_time", minT_timestamp);
+    }
+
+    // Wenn neue Temperatur kleiner ist, aktualisieren
+    if (currentTemp < minT) {
+      minT = currentTemp;
+      minT_timestamp = millis();
+      preferences.putULong("minT_time", minT_timestamp);
+    }
+
+    // Gleiches für maxT
+    if (millis() - maxT_timestamp > twentyFourHours || maxT_timestamp == 0) {
+      maxT = currentTemp;
+      maxT_timestamp = millis();
+      preferences.putULong("maxT_time", maxT_timestamp);
+    }
+
+    if (currentTemp > maxT) {
+      maxT = currentTemp;
+      maxT_timestamp = millis();
+      preferences.putULong("maxT_time", maxT_timestamp);
+    }
+
     yield();
     if (units == "imperial") {
       wData[3] = wData[3] * 9 / 5 + 32;
@@ -638,10 +703,21 @@ void getData() {
 
     preferences.putFloat("minT", minT);  // Save updated minimum temperature to preferences
     preferences.putFloat("maxT", maxT);  // Save updated maximum temperature to preferences
+    
 
-    lastSensorReadTime = millis();
+
+    lastSensorReadTimeBME = millis();
     Serial.print("Free Heap after getData: ");
     Serial.println(ESP.getFreeHeap());
+
+
+    if (millis() - lastHistorySave > historySaveInterval || lastHistorySave == 0) {
+      tempHistory[tempHistoryIndex] = wData[3]; // Aktuelle BME Temperatur speichern
+      tempHistoryIndex = (tempHistoryIndex + 1) % TEMP_HISTORY_SIZE;
+      saveTempHistory();
+      lastHistorySave = millis();
+      Serial.println("Temperature added to history: " + String(wData[3]));
+    }
   }
 }
 
@@ -651,7 +727,8 @@ const uint16_t* getWeatherIconByCode(const String& code) {
   if (code == "02d") return partly_cloudy_day;
   if (code == "02n") return partly_cloudy_night;
   if (code == "03d" || code == "03n") return cloudy;
-  if (code == "04d" || code == "04n") return cloudy;
+  if (code == "04d") return partly_cloudy_day;
+  if (code == "04n") return partly_cloudy_night;
   if (code == "09d" || code == "09n") return rain;
   if (code == "10d" || code == "10n") return rain;
   if (code == "11d" || code == "11n") return thunder;
@@ -859,7 +936,7 @@ void updateData() {
     press2 = 0;  // Reset button press counter
   }
 
-  if (millis() - timePased >= sensorReadInterval || timePased == 0) {
+  if (millis() - timePased >= sensorReadIntervalAPI || timePased == 0) {
     timePased = 0;  // Reset timePased to force immediate update on first run
     getData();      // Fetch new sensor and weather data
     Serial.print("Current Wmsg: ");
@@ -868,6 +945,20 @@ void updateData() {
       Wmsg = "No weather message";                     // Set default message if empty
       Serial.println("Wmsg initialized to: " + Wmsg);  // Debug log
     }
+  }
+}
+
+// --- SETUP: Temperatur-Historie laden ---
+void loadTempHistory() {
+  size_t size = preferences.getBytesLength("tempHistory");
+  if (size == sizeof(tempHistory)) {
+    preferences.getBytes("tempHistory", tempHistory, sizeof(tempHistory));
+    tempHistoryIndex = preferences.getInt("tempHistoryIndex", 0);
+    Serial.println("TempHistory loaded from Flash.");
+  } else {
+    memset(tempHistory, 0, sizeof(tempHistory)); // Alles auf 0 setzen
+    tempHistoryIndex = 0;
+    Serial.println("TempHistory initialized empty.");
   }
 }
 
@@ -881,7 +972,7 @@ void setup() {
   tft.init();                                         // Initialize TFT display
   tft.setRotation(1);                                 // Set display rotation
   tft.fillScreen(TFT_BLACK);                          // Clear display
-  tft.drawString("Connecting to WIFI!!", 30, 50, 4);  // Display connection message
+  tft.drawString("Verbinde mit WLAN!", 30, 50, 4);  // Display connection message
   sprite.createSprite(320, 170);                      // Create main sprite
   errSprite.createSprite(200, 15);                    // Increase error sprite width to 200 for longer messages
 
@@ -912,10 +1003,15 @@ void setup() {
   preferences.begin("weatherStation", false);  // Initialize preferences
   minT = preferences.getFloat("minT", 85.0);   // Load or set default minimum temperature
   maxT = preferences.getFloat("maxT", -40.0);  // Load or set default maximum temperature
+  minT_timestamp = preferences.getULong("minT_time", 0);
+  maxT_timestamp = preferences.getULong("maxT_time", 0);
+  loadTempHistory();
 
-  town = preferences.getString("town", TOWN);
-  zone  = preferences.getInt("timezone", TIMEZONE);
-  myAPI = preferences.getString("myAPI", TOWN);
+  town = preferences.getString("town", town);
+  zone  = preferences.getInt("timezone", zone);
+  myAPI = preferences.getString("myAPI", myAPI);
+
+
   
 
   
@@ -967,6 +1063,17 @@ void setup() {
     request->send(404);  // Return 404 for favicon request
   });
 
+  server.on("/tempHistory", HTTP_GET, [](AsyncWebServerRequest *request){
+    String json = "[";
+    for (int i = 0; i < TEMP_HISTORY_SIZE; i++) {
+      int index = (tempHistoryIndex + i) % TEMP_HISTORY_SIZE;
+      json += String(tempHistory[index], 2);
+      if (i < TEMP_HISTORY_SIZE - 1) json += ",";
+    }
+    json += "]";
+    request->send(200, "application/json", json);
+  });
+
   server.on("/settings", HTTP_GET, [](AsyncWebServerRequest* request) {
     String html = "<!DOCTYPE html><html><head>";
     html += "<meta charset='UTF-8'>";
@@ -985,7 +1092,7 @@ void setup() {
     html += "<form method='POST' action='/updateConfig'>";
     html += "<div><label>Town:</label><br><input name='town' type='text' value='" + town + "'></div>";
     html += "<div><label>Timezone:</label><br><input name='timezone' type='number' value='" + String(zone) + "'></div>";
-    html += "<div><label>API Key:</label><br><input name='apiKey' type='text' value='" + myAPI + "'></div>";
+    //html += "<div><label>API Key:</label><br><input name='apiKey' type='text' value='" + myAPI + "'></div>";
     html += "<div><label>Units:</label><br><select name='units'>";
     html += "<option value='metric'" + String(units == "metric" ? " selected" : "") + ">Metric (°C, m/s)</option>";
     html += "<option value='imperial'" + String(units == "imperial" ? " selected" : "") + ">Imperial (°F, mph)</option>";
@@ -1011,13 +1118,13 @@ server.on("/updateConfig", HTTP_POST, [](AsyncWebServerRequest *request) {
     configTime(newZone * 3600, 0, ntpServer);
   }
 
-  if (request->hasParam("apiKey", true)) {
-    String newKey = request->getParam("apiKey", true)->value();
-    if (newKey.length() > 0) {
-      myAPI = newKey;
-      preferences.putString("apiKey", myAPI);
-    }
-  }
+  // if (request->hasParam("apiKey", true)) {
+  //   String newKey = request->getParam("apiKey", true)->value();
+  //   if (newKey.length() > 0) {
+  //     myAPI = newKey;
+  //     preferences.putString("apiKey", myAPI);
+  //   }
+  // }
 
   if (request->hasParam("units", true)) {
     String newUnits = request->getParam("units", true)->value();
@@ -1030,7 +1137,8 @@ server.on("/updateConfig", HTTP_POST, [](AsyncWebServerRequest *request) {
   serverUrl = "https://api.openweathermap.org/data/2.5/weather?q=" + town + "&appid=" + String(API_KEY) + "&units=" + UNITS;
   forecastUrl = "https://api.openweathermap.org/data/2.5/forecast?q=" + town + "&appid=" + String(API_KEY) + "&units=" + UNITS + "&cnt=45";
 
-  lastSensorReadTime = 0;
+  lastSensorReadTimeAPI = 0;
+  lastSensorReadTimeBME = 0;
   getData();  // Reload weather data immediately
   
   request->redirect("/current");
